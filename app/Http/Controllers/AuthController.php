@@ -8,51 +8,109 @@ use Illuminate\Support\Facades\Auth;
 use App\Models\User;
 use Laravel\Sanctum\Sanctum;
 use Laravel\Sanctum\NewAccessToken;
+use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Hash;
+
 
 class AuthController extends Controller
 {
+
+
+    public function getAllUsers()
+{
+    $users = User::all();
+
+    return response()->json([
+        'status' => 200,
+        'message' => 'Daftar semua user',
+        'users' => $users,
+    ]);
+}
+
+
     public function register(Request $request) {
-        $data = $request->validate([
-            'name' => 'required|max:255',
-            'email' => 'required|email|unique:users',
-            'password' => 'required|confirmed'
+        $validator = Validator::make($request->all() , [
+            'name' => 'required|max:191',
+            'email' => 'required|email|unique:users,email',
+            'password' => 'required|min:5|confirmed'
         ]);
 
-        $request->user()->fill([
-            'password' => Hash::make($request->newPassword)
-        ])->save();
+        //bikin error
+        if ($validator->fails()) {
+            return response()->json([
+            'status' => 422,
+            'message' => 'Validasi gagal',
+            'errors' => $validator->errors()
+        ], 422);
 
-        $user = User::create($data);
+            //klo ga error masuk sini
+        } else {
+            $user = User::create([
+                'name' => $request->name,
+                'email' => $request->email,
+                'password' =>Hash::make($request->password),
+            ]);
+                }
 
-        $token = $user->createToken('API token')->accessToken;
+            $token = $user->createToken('API Token')->plainTextToken;
 
-        return response()->json([ 'user' => $user, 'token' => $token],200);
-    }
+
+            return response()->json([
+                'status' => 200,
+                'token' => $token,
+                'messages' => "Register Berhasil",
+                'user' => $user
+            ]);
+        }
+
+
 
     public function login(Request $request) {
-        $data = $request->validate([
-            'name' => 'email|required',
+        $validator = Validator::make($request->all() , [
+            'email' => 'required|max:191',
             'password' => 'required',
         ]);
 
-        if (!auth()->attempt($data)) {
-            return response(['error_message' => 'Incorrect Details.
-            Please try again']);
+        if ($validator->fails()){
+            return response()->json([
+                "status" => 422,
+                "messages" =>$validator->messages()
+            ], 422);
+        } else {
+            $user = User::where('email' , $request->email)->first();
+
+            if(!$user || !Hash::check($request->password, $user->password)) {
+                return response()->json([
+                    "status" => 401,
+                    "messages" => "Password Atau Email Yang Anda Masukkan Salah"
+                ], 401);
+            } else {
+
+                $token = $user->createToken($user->email)->plainTextToken;
+
+                return response()->json([
+                        'status' => 200,
+                        'name' => $user->name,
+                        'email' => $user->email,
+                        'token' => $token,
+                        'messages' => 'Logged in Succesfully'
+                ]);
+
+            }
         }
-
-        $token = auth()->user()->createToken('API Token')->accessToken;
-
-        return response()->json(['user' => auth()->user(), 'token' => $token],200);
     }
 
-    public function logout(Request $request): RedirectResponse
+    public function logout(Request $request)
 {
-    Auth::logout();
+    // hapus token yang dipakai user saat ini
+    $request->user()->currentAccessToken()->delete();
 
-    $request->session()->invalidate();
-
-    $request->session()->regenerateToken();
-
-    return response()->json(['Status'=> "Logged Out"],200);
+    return response()->json([
+        'status' => 200,
+        'message' => 'Logout berhasil'
+    ]);
 }
+
 }
+
